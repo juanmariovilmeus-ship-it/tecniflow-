@@ -1,0 +1,6 @@
+{
+  "name": "TecniFlow",
+  "description": "Sistema SaaS para gestão de ordens de serviço, clientes, orçamentos e estoque para assistências técnicas de celulares e computadores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
