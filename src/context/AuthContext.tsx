@@ -22,6 +22,29 @@ interface RegisterData {
   password: string;
 }
 
+const RECOVERY_OTP_PENDING_KEY = 'tecniflow_recovery_otp_pending';
+
+function setOtpRecoveryPendingFlag(active: boolean): void {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      if (active) {
+        window.sessionStorage.setItem(RECOVERY_OTP_PENDING_KEY, '1');
+      } else {
+        window.sessionStorage.removeItem(RECOVERY_OTP_PENDING_KEY);
+      }
+    }
+  } catch {}
+}
+
+function hasOtpRecoveryPendingFlag(): boolean {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      return window.sessionStorage.getItem(RECOVERY_OTP_PENDING_KEY) === '1';
+    }
+  } catch {}
+  return false;
+}
+
 interface AuthContextType {
   user: User | null;
   company: Company | null;
@@ -35,6 +58,7 @@ interface AuthContextType {
   register: (data: RegisterData) => Promise<{ confirmationRequired: boolean }>;
   logout: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
+  verifyRecoveryOtp: (email: string, token: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
   updateCompany: (data: Partial<Company>) => Promise<void>;
   updateCompanyLogo: (logoDataUrl: string | null) => Promise<void>;
@@ -62,6 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const explicitRecoveryErrorRef = React.useRef<boolean>(false);
   const recoveryUserIdRef = React.useRef<string | null>(null);
   const passwordAlreadyUpdatedRef = React.useRef<boolean>(false);
+  const otpVerificationInFlightRef = React.useRef<boolean>(false);
 
   const updateRecoveryState = useCallback((newState: 'idle' | 'verifying' | 'ready' | 'expired_or_invalid' | 'password_updated_signout_pending') => {
     recoveryStateRef.current = newState;
@@ -200,7 +225,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let isRecoveryFlow = false;
-    if (typeof window !== 'undefined' && isRecoveryUrl()) {
+    if (typeof window !== 'undefined' && (isRecoveryUrl() || hasOtpRecoveryPendingFlag())) {
       isRecoveryFlow = true;
       coordinator.invalidate();
       updateRecoveryMode(true);
@@ -266,6 +291,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      // Enquanto verifyOtp está em andamento, bloqueia /api/auth/me e evita corrida com verifyRecoverySessionAsync
+      if (otpVerificationInFlightRef.current) {
+        return;
+      }
+
       if (event === 'PASSWORD_RECOVERY') {
         coordinator.invalidate();
         updateRecoveryMode(true);
@@ -280,7 +310,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      if (isRecoveryModeRef.current || (typeof window !== 'undefined' && isRecoveryUrl())) {
+      if (isRecoveryModeRef.current || (typeof window !== 'undefined' && (isRecoveryUrl() || hasOtpRecoveryPendingFlag()))) {
         coordinator.invalidate();
         if (session?.access_token && session?.user?.id) {
           if (recoveryStateRef.current === 'ready' && recoveryUserIdRef.current && session.user.id !== recoveryUserIdRef.current) {
@@ -402,6 +432,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     explicitRecoveryErrorRef.current = false;
     recoveryUserIdRef.current = null;
     passwordAlreadyUpdatedRef.current = false;
+    otpVerificationInFlightRef.current = false;
+    setOtpRecoveryPendingFlag(false);
     cleanAuthUrl();
 
     try {
@@ -440,6 +472,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     explicitRecoveryErrorRef.current = false;
     recoveryUserIdRef.current = null;
     passwordAlreadyUpdatedRef.current = false;
+    otpVerificationInFlightRef.current = false;
+    setOtpRecoveryPendingFlag(false);
     cleanAuthUrl();
     return { success: true };
   }, [handleImmediateLogout, coordinator, updateRecoveryMode, updateRecoveryState]);
@@ -518,11 +552,140 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const verifyRecoveryOtp = async (email: string, token: string) => {
+    setError(null);
+    const normalizedEmail = email.trim().toLowerCase();
+    const cleanToken = token.trim();
+
+    if (!normalizedEmail || normalizedEmail.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      throw new Error('Informe um e-mail válido com no máximo 100 caracteres.');
+    }
+
+    if (!cleanToken) {
+      throw new Error('Informe o código de recuperação enviado para o seu e-mail.');
+    }
+
+    // Bloqueia entrada no painel antes de chamar verifyOtp para evitar bootstrap via onAuthStateChange
+    coordinator.invalidate();
+    const otpEpoch = coordinator.getGeneration();
+    explicitRecoveryErrorRef.current = false;
+    passwordAlreadyUpdatedRef.current = false;
+    recoveryUserIdRef.current = null;
+    otpVerificationInFlightRef.current = true;
+    updateRecoveryMode(true);
+    updateRecoveryState('verifying');
+
+    try {
+      const { data, error: sbError } = await supabase.auth.verifyOtp({
+        email: normalizedEmail,
+        token: cleanToken,
+        type: 'recovery',
+      });
+
+      if (coordinator.getGeneration() !== otpEpoch) {
+        return;
+      }
+
+      if (sbError) {
+        updateRecoveryMode(false);
+        updateRecoveryState('idle');
+        setOtpRecoveryPendingFlag(false);
+
+        const msg = (sbError.message || '').toLowerCase();
+        const status = (sbError as any).status;
+        const code = String((sbError as any).code || (sbError as any).error_code || '').toLowerCase();
+
+        if (
+          status === 429 ||
+          code === 'over_request_rate_limit' ||
+          code === 'over_email_send_rate_limit' ||
+          msg.includes('rate limit') ||
+          msg.includes('too many requests')
+        ) {
+          throw new Error('Muitas tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente.');
+        }
+
+        if (
+          msg.includes('network') ||
+          msg.includes('fetch') ||
+          msg.includes('failed to fetch') ||
+          msg.includes('network unavailable')
+        ) {
+          throw new Error('Falha de conexão. Verifique sua internet e tente novamente.');
+        }
+
+        if (code === 'otp_expired' || msg.includes('expired') || msg.includes('otp_expired')) {
+          throw new Error('Código expirado ou inválido. Solicite um novo código e tente novamente.');
+        }
+
+        if (
+          code === 'otp_disabled' ||
+          msg.includes('invalid') ||
+          msg.includes('token') ||
+          status === 400 ||
+          status === 401 ||
+          status === 403
+        ) {
+          throw new Error('Código de recuperação inválido ou expirado. Confira o código digitado ou solicite um novo envio.');
+        }
+
+        throw new Error('Não foi possível validar o código agora. Tente novamente.');
+      }
+
+      const sessionRes = data?.session
+        ? { data: { session: data.session } }
+        : await supabase.auth.getSession();
+      const activeSession = sessionRes?.data?.session;
+
+      const { data: verifiedUserData, error: verifyUserError } = await supabase.auth.getUser();
+      if (coordinator.getGeneration() !== otpEpoch) {
+        return;
+      }
+
+      const verifiedUserId = verifiedUserData?.user?.id;
+      if (
+        verifyUserError ||
+        !verifiedUserId ||
+        !activeSession?.access_token ||
+        (activeSession.user?.id && activeSession.user.id !== verifiedUserId)
+      ) {
+        updateRecoveryMode(false);
+        updateRecoveryState('idle');
+        setOtpRecoveryPendingFlag(false);
+        try { await supabase.auth.signOut(); } catch {}
+        throw new Error('Não foi possível confirmar a sessão de recuperação. Solicite um novo código.');
+      }
+
+      recoveryUserIdRef.current = verifiedUserId;
+      setOtpRecoveryPendingFlag(true);
+      updateRecoveryMode(true);
+      updateRecoveryState('ready');
+    } catch (thrownErr: any) {
+      if (recoveryStateRef.current !== 'ready') {
+        updateRecoveryMode(false);
+        updateRecoveryState('idle');
+        setOtpRecoveryPendingFlag(false);
+      }
+      const msg = String(thrownErr?.message || '');
+      if (
+        msg.toLowerCase().includes('network') ||
+        msg.toLowerCase().includes('fetch') ||
+        msg.toLowerCase().includes('failed to fetch') ||
+        msg.toLowerCase().includes('network unavailable')
+      ) {
+        throw new Error('Falha de conexão. Verifique sua internet e tente novamente.');
+      }
+      throw thrownErr;
+    } finally {
+      otpVerificationInFlightRef.current = false;
+    }
+  };
+
   const updatePassword = async (newPassword: string) => {
     setError(null);
 
     if (!isRecoveryModeRef.current || recoveryStateRef.current !== 'ready' || !recoveryUserIdRef.current) {
-      throw new Error('Abra um link de recuperação válido para definir uma nova senha.');
+      throw new Error('Abra um link de recuperação válido ou valide o código recebido para definir uma nova senha.');
     }
     const expectedRecoveryUserId = recoveryUserIdRef.current;
     const updateEpoch = coordinator.getGeneration();
@@ -604,6 +767,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     explicitRecoveryErrorRef.current = false;
     recoveryUserIdRef.current = null;
     passwordAlreadyUpdatedRef.current = false;
+    otpVerificationInFlightRef.current = false;
+    setOtpRecoveryPendingFlag(false);
     cleanAuthUrl();
   };
 
@@ -674,6 +839,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         logout,
         requestPasswordReset,
+        verifyRecoveryOtp,
         updatePassword,
         updateCompany,
         updateCompanyLogo,
@@ -695,4 +861,3 @@ export function useAuth() {
   }
   return context;
 }
-
