@@ -9,6 +9,8 @@ import {
   KeyRound,
   ArrowLeft,
   RefreshCw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { TecniFlowLogo } from './TecniFlowLogo';
 
@@ -17,6 +19,7 @@ export const AuthView: React.FC = () => {
     login,
     register,
     requestPasswordReset,
+    verifyRecoveryOtp,
     updatePassword,
     isRecoveryMode,
     recoveryState,
@@ -31,9 +34,11 @@ export const AuthView: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Recovery request view state & 60s cooldown timer
+  // Recovery request & OTP verification state with 60s cooldown timer
   const [showForgotView, setShowForgotView] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'request' | 'verify_code'>('request');
   const [forgotEmail, setForgotEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   React.useEffect(() => {
@@ -47,10 +52,13 @@ export const AuthView: React.FC = () => {
   // Password reset state (when entering via recovery link)
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showResetNewPassword, setShowResetNewPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Register form state
   const [companyName, setCompanyName] = useState('');
@@ -61,6 +69,7 @@ export const AuthView: React.FC = () => {
   const [ownerName, setOwnerName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
 
   const activeDisplayError = errorMsg || contextError;
 
@@ -132,7 +141,42 @@ export const AuthView: React.FC = () => {
     setSubmitting(true);
     try {
       await requestPasswordReset(trimmedEmail);
-      setSuccessMsg('Se existir uma conta com este e-mail, você receberá as instruções de recuperação. Confira também o spam.');
+      setSuccessMsg('Se existir uma conta com este e-mail, enviamos o código e as instruções de recuperação. Confira também o spam.');
+      setCooldownSeconds(60);
+      setRecoveryCode('');
+      setForgotStep('verify_code');
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (
+        !msg ||
+        msg.includes('publicado') ||
+        msg.includes('Origem de redirecionamento') ||
+        msg.includes('Falha ao solicitar')
+      ) {
+        setErrorMsg('Não foi possível enviar o link agora. Tente novamente mais tarde.');
+      } else {
+        setErrorMsg(msg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (submitting || cooldownSeconds > 0) return;
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const trimmedEmail = forgotEmail.trim();
+    if (!trimmedEmail || trimmedEmail.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setErrorMsg('Informe um e-mail válido com no máximo 100 caracteres.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await requestPasswordReset(trimmedEmail);
+      setSuccessMsg('Se existir uma conta com este e-mail, enviamos um novo código de recuperação. Confira também o spam.');
       setCooldownSeconds(60);
     } catch (err: any) {
       const msg = err?.message || '';
@@ -146,6 +190,39 @@ export const AuthView: React.FC = () => {
       } else {
         setErrorMsg(msg);
       }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const trimmedEmail = forgotEmail.trim();
+    if (!trimmedEmail || trimmedEmail.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setErrorMsg('Informe um e-mail válido com no máximo 100 caracteres.');
+      return;
+    }
+
+    const cleanCode = recoveryCode.trim();
+    if (!cleanCode) {
+      setErrorMsg('Digite o código de recuperação enviado para o seu e-mail.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await verifyRecoveryOtp(trimmedEmail, cleanCode);
+      setRecoveryCode('');
+      setShowForgotView(false);
+      setForgotStep('request');
+      setErrorMsg(null);
+      setSuccessMsg('Código confirmado! Defina sua nova senha abaixo.');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Código inválido ou expirado. Confira o código digitado ou solicite um novo envio.');
     } finally {
       setSubmitting(false);
     }
@@ -172,6 +249,10 @@ export const AuthView: React.FC = () => {
       await updatePassword(newPassword);
       setNewPassword('');
       setConfirmPassword('');
+      setShowResetNewPassword(false);
+      setShowResetConfirmPassword(false);
+      setRecoveryCode('');
+      setForgotStep('request');
       setSuccessMsg('Sua senha foi redefinida com sucesso! Faça login com a nova senha.');
       setActiveTab('login');
       setShowForgotView(false);
@@ -197,15 +278,15 @@ export const AuthView: React.FC = () => {
         <div className="bg-slate-800/90 border border-slate-700/80 rounded-xl p-6 sm:p-8 shadow-2xl backdrop-blur-sm">
           {/* Notifications */}
           {activeDisplayError && (
-            <div className="mb-6 p-3.5 rounded-lg bg-rose-950/60 border border-rose-800 text-rose-200 text-sm flex items-start gap-2.5">
-              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div role="alert" aria-live="assertive" className="mb-6 p-3.5 rounded-lg bg-rose-950/60 border border-rose-800 text-rose-200 text-sm flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" aria-hidden="true" />
               <span>{activeDisplayError}</span>
             </div>
           )}
 
           {successMsg && (
-            <div className="mb-6 p-3.5 rounded-lg bg-teal-950/60 border border-teal-700 text-teal-200 text-sm flex items-start gap-2.5">
-              <CheckCircle2 className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" />
+            <div role="status" aria-live="polite" className="mb-6 p-3.5 rounded-lg bg-teal-950/60 border border-teal-700 text-teal-200 text-sm flex items-start gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" aria-hidden="true" />
               <span>{successMsg}</span>
             </div>
           )}
@@ -240,52 +321,56 @@ export const AuthView: React.FC = () => {
               </div>
             </div>
           ) : isRecoveryMode && recoveryState === 'verifying' ? (
-            /* VIEW: Verifying Recovery Token */
-            <div className="space-y-4 text-center py-8">
+            /* VIEW: Verifying Recovery Token or Code */
+            <div role="status" aria-live="polite" className="space-y-4 text-center py-8">
               <div className="w-12 h-12 rounded-full bg-teal-900/60 border border-teal-700 flex items-center justify-center mx-auto text-teal-300 animate-spin">
-                <RefreshCw className="w-6 h-6" />
+                <RefreshCw className="w-6 h-6" aria-hidden="true" />
               </div>
-              <h3 className="text-lg font-bold text-white">Verificando Link de Recuperação</h3>
+              <h3 className="text-lg font-bold text-white">Verificando Credenciais de Recuperação</h3>
               <p className="text-sm text-slate-300 max-w-md mx-auto">
-                Validando suas credenciais de segurança temporárias...
+                Validando suas credenciais temporárias de segurança...
               </p>
             </div>
           ) : isRecoveryMode && recoveryState === 'expired_or_invalid' ? (
             /* VIEW: Expired or Invalid Recovery Link */
             <div className="space-y-4 text-center py-6">
               <div className="w-12 h-12 rounded-full bg-rose-950/70 border border-rose-800 flex items-center justify-center mx-auto text-rose-300">
-                <AlertCircle className="w-6 h-6" />
+                <AlertCircle className="w-6 h-6" aria-hidden="true" />
               </div>
-              <h3 className="text-lg font-bold text-white">Link Expirado ou Inválido</h3>
+              <h3 className="text-lg font-bold text-white">Link ou Código Expirado ou Inválido</h3>
               <p className="text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
-                O link de recuperação utilizado expirou, já foi utilizado ou é inválido. Por motivos de segurança, solicite um novo link para continuar.
+                O acesso de recuperação utilizado expirou, já foi utilizado ou é inválido. Por motivos de segurança, solicite um novo código de recuperação para continuar.
               </p>
               <div className="pt-4 flex flex-col sm:flex-row gap-2.5 justify-center max-w-sm mx-auto">
                 <button
                   type="button"
                   onClick={async () => {
                     await exitRecoveryMode();
+                    setForgotStep('request');
+                    setRecoveryCode('');
                     setShowForgotView(true);
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
                   className="flex-1 py-2.5 px-4 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition-colors flex items-center justify-center gap-2"
                 >
-                  <Mail className="w-4 h-4" />
-                  <span>Solicitar Novo Link</span>
+                  <Mail className="w-4 h-4" aria-hidden="true" />
+                  <span>Solicitar Novo Código</span>
                 </button>
                 <button
                   type="button"
                   onClick={async () => {
                     await exitRecoveryMode();
                     setShowForgotView(false);
+                    setForgotStep('request');
+                    setRecoveryCode('');
                     setActiveTab('login');
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
                   className="py-2.5 px-4 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium text-sm transition-colors flex items-center justify-center gap-2"
                 >
-                  <ArrowLeft className="w-4 h-4" />
+                  <ArrowLeft className="w-4 h-4" aria-hidden="true" />
                   <span>Voltar ao Login</span>
                 </button>
               </div>
@@ -328,13 +413,13 @@ export const AuthView: React.FC = () => {
               </div>
             </div>
           ) : isRecoveryMode ? (
-            /* VIEW: Password Reset (Verified Recovery Session) */
+            /* VIEW: Password Reset (Verified Recovery Session via OTP or Link) */
             <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
               <div className="border-b border-slate-700/80 pb-3 mb-2 flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-teal-400" />
+                <KeyRound className="w-5 h-5 text-teal-400" aria-hidden="true" />
                 <div>
                   <h3 className="text-sm font-semibold text-slate-200">Definir Nova Senha</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p id="reset-password-hint" className="text-xs text-slate-400 mt-0.5">
                     Digite a sua nova senha de acesso ao sistema (mínimo de 12 caracteres).
                   </p>
                 </div>
@@ -344,38 +429,69 @@ export const AuthView: React.FC = () => {
                 <label htmlFor="reset-new-password" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
                   Nova Senha (mínimo 12 caracteres) *
                 </label>
-                <input
-                  id="reset-new-password"
-                  name="new-password"
-                  type="password"
-                  required
-                  autoComplete="new-password"
-                  minLength={12}
-                  maxLength={72}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Digite sua nova senha forte"
-                  className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-                />
+                <div className="relative">
+                  <input
+                    id="reset-new-password"
+                    name="new-password"
+                    type={showResetNewPassword ? 'text' : 'password'}
+                    required
+                    autoComplete="new-password"
+                    aria-describedby="reset-password-hint"
+                    minLength={12}
+                    maxLength={72}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Digite sua nova senha forte"
+                    className="w-full pl-3.5 pr-11 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetNewPassword((prev) => !prev)}
+                    aria-label={showResetNewPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                    aria-pressed={showResetNewPassword}
+                    className="absolute inset-y-0 right-0 px-3 flex items-center justify-center text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 rounded-r-lg transition-colors"
+                  >
+                    {showResetNewPassword ? (
+                      <EyeOff className="w-4 h-4" aria-hidden="true" />
+                    ) : (
+                      <Eye className="w-4 h-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label htmlFor="reset-confirm-password" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
                   Confirmar Nova Senha *
                 </label>
-                <input
-                  id="reset-confirm-password"
-                  name="confirm-new-password"
-                  type="password"
-                  required
-                  autoComplete="new-password"
-                  minLength={12}
-                  maxLength={72}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repita a nova senha digitada"
-                  className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-                />
+                <div className="relative">
+                  <input
+                    id="reset-confirm-password"
+                    name="confirm-new-password"
+                    type={showResetConfirmPassword ? 'text' : 'password'}
+                    required
+                    autoComplete="new-password"
+                    minLength={12}
+                    maxLength={72}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repita a nova senha digitada"
+                    className="w-full pl-3.5 pr-11 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetConfirmPassword((prev) => !prev)}
+                    aria-label={showResetConfirmPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                    aria-pressed={showResetConfirmPassword}
+                    className="absolute inset-y-0 right-0 px-3 flex items-center justify-center text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 rounded-r-lg transition-colors"
+                  >
+                    {showResetConfirmPassword ? (
+                      <EyeOff className="w-4 h-4" aria-hidden="true" />
+                    ) : (
+                      <Eye className="w-4 h-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="pt-2 flex flex-col sm:flex-row gap-2">
@@ -385,12 +501,19 @@ export const AuthView: React.FC = () => {
                   className="flex-1 py-2.5 px-4 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {submitting ? 'Salvando nova senha...' : 'Salvar Nova Senha'}
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
                   onClick={async () => {
                     await exitRecoveryMode();
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setShowResetNewPassword(false);
+                    setShowResetConfirmPassword(false);
+                    setRecoveryCode('');
+                    setForgotStep('request');
+                    setShowForgotView(false);
                     setActiveTab('login');
                     setErrorMsg(null);
                     setSuccessMsg(null);
@@ -401,15 +524,116 @@ export const AuthView: React.FC = () => {
                 </button>
               </div>
             </form>
+          ) : showForgotView && forgotStep === 'verify_code' ? (
+            /* VIEW: Enter Recovery OTP Code */
+            <form onSubmit={handleVerifyOtpSubmit} className="space-y-4">
+              <div className="border-b border-slate-700/80 pb-3 mb-2 flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-teal-400" aria-hidden="true" />
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-200">Digite o Código Recebido</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Informe o código de recuperação enviado por e-mail para liberar a criação da nova senha.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="recovery-otp-email" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                    E-mail Cadastrado *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotStep('request');
+                      setRecoveryCode('');
+                      setErrorMsg(null);
+                      setSuccessMsg(null);
+                    }}
+                    className="text-xs text-teal-400 hover:text-teal-300 transition-colors"
+                  >
+                    Alterar e-mail
+                  </button>
+                </div>
+                <input
+                  id="recovery-otp-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  maxLength={100}
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  placeholder="Seu e-mail cadastrado"
+                  className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="recovery-otp-code" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                  Código de Recuperação *
+                </label>
+                <input
+                  id="recovery-otp-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  aria-describedby="recovery-otp-hint"
+                  value={recoveryCode}
+                  onChange={(e) => setRecoveryCode(e.target.value)}
+                  placeholder="Digite o código recebido no e-mail"
+                  className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm tracking-widest font-mono"
+                />
+                <p id="recovery-otp-hint" className="text-[11px] text-slate-400 mt-1.5">
+                  Confira sua caixa de entrada e a pasta de spam. O código tem validade limitada.
+                </p>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                <button
+                  type="submit"
+                  disabled={submitting || !recoveryCode.trim()}
+                  className="flex-1 py-2.5 px-4 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {submitting ? 'Verificando código...' : 'Verificar Código'}
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting || cooldownSeconds > 0}
+                  onClick={handleResendCode}
+                  className="py-2.5 px-4 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium text-sm transition-colors disabled:opacity-50"
+                >
+                  {cooldownSeconds > 0 ? `Reenviar em ${cooldownSeconds}s` : 'Reenviar código'}
+                </button>
+              </div>
+
+              <div className="pt-1 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotView(false);
+                    setForgotStep('request');
+                    setRecoveryCode('');
+                    setErrorMsg(null);
+                    setSuccessMsg(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Voltar ao Login</span>
+                </button>
+              </div>
+            </form>
           ) : showForgotView ? (
             /* VIEW: Request Password Reset */
             <form onSubmit={handleForgotSubmit} className="space-y-4">
               <div className="border-b border-slate-700/80 pb-3 mb-2 flex items-center gap-2">
-                <Mail className="w-5 h-5 text-teal-400" />
+                <Mail className="w-5 h-5 text-teal-400" aria-hidden="true" />
                 <div>
                   <h3 className="text-sm font-semibold text-slate-200">Recuperar Senha de Acesso</h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Enviaremos as instruções de recuperação para o e-mail cadastrado.
+                    Enviaremos um código e as instruções de recuperação para o e-mail cadastrado.
                   </p>
                 </div>
               </div>
@@ -438,22 +662,38 @@ export const AuthView: React.FC = () => {
                   className="flex-1 py-2.5 px-4 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-medium text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {submitting
-                    ? 'Enviando link...'
+                    ? 'Enviando código...'
                     : cooldownSeconds > 0
                     ? `Aguarde ${cooldownSeconds}s para reenviar`
-                    : 'Enviar Link de Recuperação'}
-                  <ArrowRight className="w-4 h-4" />
+                    : 'Enviar Código de Recuperação'}
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setShowForgotView(false);
+                    setForgotStep('request');
+                    setRecoveryCode('');
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
                   className="py-2.5 px-4 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium text-sm transition-colors"
                 >
                   Voltar ao Login
+                </button>
+              </div>
+
+              <div className="pt-1 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotStep('verify_code');
+                    setErrorMsg(null);
+                    setSuccessMsg(null);
+                  }}
+                  className="text-xs text-teal-400 hover:text-teal-300 underline transition-colors"
+                >
+                  Já tenho um código de recuperação
                 </button>
               </div>
             </form>
@@ -465,6 +705,8 @@ export const AuthView: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setActiveTab('login');
+                    setShowLoginPassword(false);
+                    setShowRegisterPassword(false);
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
@@ -481,6 +723,8 @@ export const AuthView: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setActiveTab('register');
+                    setShowLoginPassword(false);
+                    setShowRegisterPassword(false);
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
@@ -522,6 +766,9 @@ export const AuthView: React.FC = () => {
                         type="button"
                         onClick={() => {
                           setForgotEmail(loginEmail);
+                          setForgotStep('request');
+                          setRecoveryCode('');
+                          setShowLoginPassword(false);
                           setShowForgotView(true);
                           setErrorMsg(null);
                           setSuccessMsg(null);
@@ -531,15 +778,30 @@ export const AuthView: React.FC = () => {
                         Esqueci minha senha
                       </button>
                     </div>
-                    <input
-                      id="login-password"
-                      type="password"
-                      required
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="Sua senha de acesso"
-                      className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-                    />
+                    <div className="relative">
+                      <input
+                        id="login-password"
+                        type={showLoginPassword ? 'text' : 'password'}
+                        required
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        placeholder="Sua senha de acesso"
+                        className="w-full pl-3.5 pr-11 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPassword((prev) => !prev)}
+                        aria-label={showLoginPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                        aria-pressed={showLoginPassword}
+                        className="absolute inset-y-0 right-0 px-3 flex items-center justify-center text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 rounded-r-lg transition-colors"
+                      >
+                        {showLoginPassword ? (
+                          <EyeOff className="w-4 h-4" aria-hidden="true" />
+                        ) : (
+                          <Eye className="w-4 h-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="pt-2">
@@ -676,17 +938,32 @@ export const AuthView: React.FC = () => {
                     <label htmlFor="reg-owner-password" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
                       Senha de Acesso (mínimo 12 caracteres) *
                     </label>
-                    <input
-                      id="reg-owner-password"
-                      type="password"
-                      required
-                      minLength={12}
-                      maxLength={72}
-                      value={registerPassword}
-                      onChange={(e) => setRegisterPassword(e.target.value)}
-                      placeholder="Digite ao menos 12 caracteres"
-                      className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-                    />
+                    <div className="relative">
+                      <input
+                        id="reg-owner-password"
+                        type={showRegisterPassword ? 'text' : 'password'}
+                        required
+                        minLength={12}
+                        maxLength={72}
+                        value={registerPassword}
+                        onChange={(e) => setRegisterPassword(e.target.value)}
+                        placeholder="Digite ao menos 12 caracteres"
+                        className="w-full pl-3.5 pr-11 py-2.5 rounded-lg bg-slate-900/90 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegisterPassword((prev) => !prev)}
+                        aria-label={showRegisterPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                        aria-pressed={showRegisterPassword}
+                        className="absolute inset-y-0 right-0 px-3 flex items-center justify-center text-slate-400 hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 rounded-r-lg transition-colors"
+                      >
+                        {showRegisterPassword ? (
+                          <EyeOff className="w-4 h-4" aria-hidden="true" />
+                        ) : (
+                          <Eye className="w-4 h-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="pt-2">
