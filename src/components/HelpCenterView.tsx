@@ -1,23 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { HELP_FAQ_ITEMS, FaqItem } from '../data/helpKnowledge';
-import {
-  HelpCircle,
-  Search,
-  Bot,
-  Send,
-  RefreshCw,
-  Copy,
-  Check,
-  AlertCircle,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
-  ShieldAlert,
-  MessageSquare,
-  Clock,
-  Layers,
-  Wrench
-} from 'lucide-react';
+import { HELP_FAQ_ITEMS } from '../data/helpKnowledge';
+import { HelpCircle, Search, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
 
 export const HelpCenterView: React.FC = () => {
   // Estado do FAQ
@@ -74,6 +57,11 @@ export const HelpCenterView: React.FC = () => {
           {copiedId === 'support-request' ? 'Pedido copiado' : 'Copiar pedido de ajuda'}
         </button>
       </div>
+        <section className="bg-teal-50 rounded-xl border border-teal-200 p-4 text-sm text-slate-700">
+          <h2 className="font-semibold text-slate-900">Precisa de ajuda?</h2>
+          <p className="mt-1">Fale com o suporte: <a className="text-teal-700 underline break-all" href="mailto:tecniflowsupport@gmail.com">tecniflowsupport@gmail.com</a></p>
+          <p className="mt-2 text-xs">Informe a tela e o problema encontrado. Não envie senhas, códigos de verificação ou dados de clientes. O botão Copiar pedido de ajuda prepara um modelo para você enviar.</p>
+        </section>
         <div className="space-y-6">
           {/* Barra de Pesquisa e Filtros */}
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs space-y-4">
@@ -122,7 +110,7 @@ export const HelpCenterView: React.FC = () => {
               <HelpCircle className="w-8 h-8 text-slate-300 mx-auto" />
               <h3 className="text-sm font-bold text-slate-700">Nenhum artigo encontrado</h3>
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Não encontramos respostas para "{searchQuery}". Tente outros termos ou utilize o Assistente Virtual.
+                Não encontramos respostas para "{searchQuery}". Tente outros termos ou entre em contato pelo e-mail de suporte acima.
               </p>
               <button
                 type="button"
