@@ -94,7 +94,21 @@ export async function cloudRequest(endpoint: string, method: string, body: any, 
     try {
       const { data, error } = await supabase.functions.invoke('kiwify-checkout', { body: b });
       if (error) {
-        throw new Error(error.message || 'Falha ao comunicar com o serviço de checkout.');
+        let failure: any = null;
+        try { failure = await error.context?.json(); } catch {}
+        const status = error.context?.status;
+        const code = failure?.error;
+        const messages: Record<string, string> = {
+          billing_not_configured: 'O pagamento está temporariamente indisponível. Entre em contato com o suporte.',
+          trial_active: 'Seu período de avaliação gratuita ainda está ativo.',
+          intent_creation_failed: failure?.message || 'Não foi possível iniciar a contratação. Atualize o status e tente novamente.',
+        };
+        const checkoutError = new Error(status === 401
+          ? 'Sua sessão expirou. Entre novamente na conta para continuar.'
+          : messages[code] || 'Não foi possível abrir o pagamento. Verifique sua conexão e tente novamente.');
+        (checkoutError as any).code = status === 401 ? 'session_expired' : code || 'checkout_unavailable';
+        (checkoutError as any).error = (checkoutError as any).code;
+        throw checkoutError;
       }
       if (data?.error === 'billing_not_configured') {
         const err = new Error(data.message || 'A contratação online está em fase de configuração pela administração.');
@@ -109,15 +123,13 @@ export async function cloudRequest(endpoint: string, method: string, body: any, 
       }
       return data;
     } catch (err: any) {
-      if (err?.code === 'billing_not_configured' || err?.message?.includes('configuração') || err?.error === 'trial_active') {
+      if (err?.code || err?.error === 'trial_active') {
         throw err;
       }
-      // Se Edge Function ainda não foi implantada na infraestrutura do Supabase
-      const notConfiguredErr = new Error('A contratação online está em fase de configuração pela administração. Entre em contato com o suporte para ativar sua assinatura.');
-      (notConfiguredErr as any).code = 'billing_not_configured';
+      const notConfiguredErr = new Error('Não foi possível abrir o pagamento. Verifique sua conexão e tente novamente.');
+      (notConfiguredErr as any).code = 'checkout_unavailable';
       throw notConfiguredErr;
     }
   }
   throw new Error('Operação não disponível neste ambiente. Nenhum dado foi salvo.');
 }
-

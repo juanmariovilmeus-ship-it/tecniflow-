@@ -65,6 +65,11 @@ export const SubscriptionView: React.FC = () => {
   const isTrial = billing?.status === 'trial' && billing?.is_active;
   const isActive = billing?.status === 'active' && billing.is_active;
   const isCanceled = billing?.status === 'canceled';
+  const hasCanceledPaidAccess = isCanceled && !!billing?.is_active;
+
+  useEffect(() => {
+    setFallbackCheckoutUrl(null);
+  }, [billing?.status, billing?.current_period_ends_at]);
 
   const handleSubscribe = async () => {
     // Evita clique duplo ou execução se não for proprietário
@@ -75,6 +80,14 @@ export const SubscriptionView: React.FC = () => {
       setNoticeModal({
         title: 'Assinatura Ativa e Regular',
         message: 'Sua assinatura mensal de R$ 49,90 está confirmada e em dia. O gerenciamento ou cancelamento da assinatura é realizado diretamente através do link enviado no e-mail de confirmação da Kiwify.'
+      });
+      return;
+    }
+
+    if (hasCanceledPaidAccess) {
+      setNoticeModal({
+        title: 'Assinatura cancelada — período pago vigente',
+        message: `A renovação automática foi cancelada. Seu acesso continua até ${formatDateTime(billing?.current_period_ends_at)}. Para evitar uma cobrança duplicada, uma nova contratação ficará disponível após o término desse período. Seus dados serão preservados.`,
       });
       return;
     }
@@ -135,8 +148,8 @@ export const SubscriptionView: React.FC = () => {
       }
 
       setNoticeModal({
-        title: res?.error === 'trial_active' ? 'Período de Avaliação em Andamento' : 'Contratação em Fase de Ativação',
-        message: res?.message || 'A contratação online por cartão está temporariamente em fase de configuração pela administração. Seus dados cadastrais e ordens de serviço continuam 100% seguros.'
+        title: res?.error === 'trial_active' ? 'Período de Avaliação em Andamento' : 'Não foi possível iniciar a contratação',
+        message: res?.message || 'Não foi possível gerar um link de pagamento válido. Atualize o status e tente novamente.'
       });
     } catch (err: any) {
       // Fecha a janela vazia se a API falhar
@@ -146,8 +159,8 @@ export const SubscriptionView: React.FC = () => {
 
       const isTrialActive = err?.error === 'trial_active' || err?.message?.includes('avaliação gratuita');
       setNoticeModal({
-        title: isTrialActive ? 'Período de Avaliação em Andamento' : 'Contratação em Fase de Ativação',
-        message: err?.message || 'A contratação online está temporariamente desativada pela administração. Seus dados cadastrais e ordens de serviço continuam 100% seguros.'
+        title: isTrialActive ? 'Período de Avaliação em Andamento' : 'Não foi possível iniciar a contratação',
+        message: err?.message || 'Não foi possível abrir o pagamento. Verifique sua conexão e tente novamente.'
       });
     } finally {
       setSubmitting(false);
@@ -259,6 +272,13 @@ export const SubscriptionView: React.FC = () => {
                 </p>
               </div>
 
+              {hasCanceledPaidAccess && (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  Renovação automática cancelada. Continue usando até o fim do período pago.
+                  Após essa data, você poderá assinar novamente para liberar o acesso.
+                </p>
+              )}
+
               {/* Informações de Vigência e Datas */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
                 {isTrial && (
@@ -303,7 +323,7 @@ export const SubscriptionView: React.FC = () => {
                   <div className="p-3 rounded-lg bg-rose-50 border border-rose-100 flex items-start gap-2.5 sm:col-span-2">
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     <div>
-                      <span className="text-rose-700 font-bold">O período de avaliação gratuita terminou.</span>
+                      <span className="text-rose-700 font-bold">Seu período de acesso terminou.</span>
                       <p className="text-rose-600 text-xs mt-0.5">
                         Seus dados, clientes e ordens de serviço continuam salvos e seguros. Para reativar o cadastro e movimentações diárias, assine o plano.
                       </p>
@@ -336,7 +356,7 @@ export const SubscriptionView: React.FC = () => {
                       ) : (
                         <Sparkles className="w-4 h-4" />
                       )}
-                      <span>{isActive ? 'Gerenciar Assinatura' : 'Assinar Agora'}</span>
+                      <span>{isActive ? 'Gerenciar Assinatura' : hasCanceledPaidAccess ? 'Sobre o cancelamento' : 'Assinar Agora'}</span>
                     </button>
 
                     {fallbackCheckoutUrl && (
