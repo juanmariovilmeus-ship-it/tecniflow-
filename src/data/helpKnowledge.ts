@@ -77,7 +77,7 @@ export const HELP_FAQ_ITEMS: FaqItem[] = [
     category: 'relatorios',
     categoryLabel: 'Relatórios',
     question: 'Quais relatórios estão disponíveis no sistema?',
-    answer: 'Acesse Relatórios de Atendimento, selecione o período desejado e consulte os indicadores e os atendimentos exibidos. Os valores refletem os registros e as regras do TecniFlow; o assistente não consulta os relatórios da sua empresa.',
+    answer: 'Acesse Relatórios de Atendimento, selecione o período desejado e consulte os indicadores e os atendimentos exibidos. Os valores refletem os registros e as regras do TecniFlow.',
     keywords: ['relatorios', 'faturamento', 'desempenho', 'ticket medio', 'metricas']
   },
 
@@ -97,7 +97,7 @@ export const HELP_FAQ_ITEMS: FaqItem[] = [
     category: 'assinatura',
     categoryLabel: 'Minha Assinatura',
     question: 'Como funciona o plano e o período de teste do TecniFlow?',
-    answer: 'O TecniFlow oferece 7 dias de avaliação por empresa. O plano custa R$ 49,90 por mês por empresa, com pagamento pela Kiwify. O proprietário pode abrir Minha Assinatura para contratar e conferir a situação do acesso. A ativação depende da confirmação do pagamento; a IA não confirma cobranças individuais.',
+    answer: 'O TecniFlow oferece 7 dias de avaliação por empresa. O plano custa R$ 49,90 por mês por empresa, com pagamento pela Kiwify. O proprietário pode abrir Minha Assinatura para contratar e conferir a situação do acesso. A ativação depende da confirmação do pagamento.',
     keywords: ['assinatura', 'plano', '49,90', 'kiwify', 'trial', '7 dias', 'teste gratuito', 'pagamento']
   },
   {
@@ -115,16 +115,24 @@ export const HELP_FAQ_ITEMS: FaqItem[] = [
     category: 'geral',
     categoryLabel: 'Acesso e Segurança',
     question: 'Como redefinir ou recuperar minha senha?',
-    answer: 'Na tela de acesso, selecione Esqueci minha senha e informe o e-mail cadastrado. Siga as instruções do link de recuperação recebido para escolher uma nova senha com pelo menos 12 caracteres. Se não localizar o e-mail, confira a pasta de spam e tente novamente mais tarde.',
-    keywords: ['recuperar senha', 'esqueci minha senha', 'redefinir', 'link']
+    answer: 'Na tela de acesso, selecione Esqueci minha senha e informe o e-mail cadastrado. Digite na tela o código de verificação recebido por e-mail e escolha uma nova senha com pelo menos 12 caracteres. Se usar o link de recuperação do e-mail, siga as instruções para definir a nova senha. Se não localizar o e-mail, confira a pasta de spam e tente novamente mais tarde.',
+    keywords: ['recuperar senha', 'esqueci minha senha', 'redefinir', 'link', 'código', 'email']
   },
   {
-    id: 'geral-assistente-ia',
+    id: 'geral-suporte',
     category: 'geral',
     categoryLabel: 'Central de Ajuda',
-    question: 'Qual é o papel do Assistente Virtual na Central de Ajuda?',
-    answer: 'O assistente orienta sobre o uso do TecniFlow e pode errar. Ele não consulta nem altera cadastros, ordens, estoque ou pagamentos. Não envie senhas nem dados pessoais de clientes. As conversas ficam somente na memória da sessão atual; o banco registra apenas o uso da cota de perguntas.',
-    keywords: ['assistente virtual', 'inteligencia artificial', 'ia', 'duvidas', 'privacidade', 'orientacao']
+    question: 'Como falar com o suporte do TecniFlow?',
+    answer: 'Envie sua dúvida para tecniflowsupport@gmail.com. Informe a tela, o que tentou fazer e a mensagem apresentada. O botão Copiar pedido de ajuda prepara um modelo; ele não envia o pedido automaticamente. Não envie senhas, códigos de verificação ou dados pessoais de clientes. Nesta versão, a Central de Ajuda oferece perguntas frequentes e contato por e-mail.',
+    keywords: ['suporte', 'contato', 'ajuda', 'email', 'atendimento']
+  },
+  {
+    id: 'assinatura-cancelamento',
+    category: 'assinatura',
+    categoryLabel: 'Minha Assinatura',
+    question: 'Cancelei a assinatura. Até quando posso usar e quando posso assinar novamente?',
+    answer: 'Após a confirmação do cancelamento pela Kiwify, a renovação automática é interrompida. O acesso continua até o fim do período já pago, indicado em Minha Assinatura. Durante esse período, uma nova contratação fica bloqueada para evitar pagamento duplicado. Ao vencer o prazo, as funções operacionais ficam bloqueadas e o proprietário pode assinar novamente. Uma nova contratação cobra imediatamente; o acesso depende da confirmação do pagamento. Os registros da empresa permanecem salvos.',
+    keywords: ['cancelamento', 'cancelada', 'renovação', 'assinar novamente', 'ciclo pago']
   }
 ];
 
